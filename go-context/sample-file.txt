@@ -1,0 +1,1301 @@
+kshitij kumarbtree.dev
+
+
+
+Follow
+
+
+Ahmed Munna
+HOME
+BADGES
+
+Notes: Golang Context
+Notes: Golang Context
+In this blog, we cover Golang contexts with use cases, examples, and in-depth theory.
+
+kshitij kumar's photo
+kshitij kumar
+·
+Feb 7, 2021
+·
+10 min read
+
+
+More
+TABLE OF CONTENTS
+Golang Context is a tool that is used to share request-scoped data, cancellation signals, and timeouts or deadlines across API layers or processes in a program. It is one of the most important tools while working with concurrent programming in Go.
+
+Important Use Cases of Context
+Request-Scoped Data:
+An example of request-scoped data would be the body, headers, or params of an API request. This data should be passed across different layers of API code e.g. header data containing auth token can be passed to auth middleware, and then to the respective controller using context. All this data can be wrapped in the context and context can be passed across. We can add more data in the same context for different layers.
+
+One more example could be passing infrastructure-related details from the outermost layer in clean architecture across different layers, handler -> services -> repositories or other services, etc. We can pass DB connection, cache connection, HTTP client, etc across all these layers by using context.
+
+Cancellation Signals:
+An example of cancellation signal could be when we launch multiple goroutines from the parent function/ method but we want to make sure that they all exit if the parent function terminates, maybe when a user closes the browser tab after initiating the request. There is no point in finishing other async jobs associated with it like fetching data from DB or any other API/ service.
+
+Cancellation signals are important to avoid goroutine leaks as well. We should always call the cancel function at the end of the parent function/ method so that all the started goroutines exit immediately.
+
+When a Context is canceled, all Contexts derived from it are also canceled. One important point to note is cancellation doesn't automatically stop the execution, cancel just closes the Done channel which we need to use to terminate processes.
+
+Timeouts:
+Timeouts are important because we need to make sure any external calls don't block our resources for long or maybe indefinitely in worst cases. Or maybe when we are running long-running commands which may go beyond the allowed time limit.
+
+For example, an API request should always have a timeout and that should be propagated within other processes/ goroutines or external calls initiated during the request. All the processes started this way should terminate immediately and free up all the resources as soon as the request times out.
+
+Deadlines:
+Deadlines are similar to timeouts but they contain a fixed time for the deadline. This avoids running for certain operations at times when they shouldn't run e.g. let's say we have a log analysis task which is expected to be completed before a certain time as after that we get huge traffic and it may hog system resources degrading performance for clients. So at that time, we might want to notify all the helper processes to stop work and return.
+
+Context Tree
+In practical implementations, we usually work with derived contexts. We create a parent context and pass it across a layer, we derive a new context with it adding some additional information and passing it again to the next layer, and so on. This way we create a tree of contexts starting from the root context which is the parent. The advantage of this structure is that we've control over the cancellation of all the contexts in one go. If the root signal closes the context, that will be propagated across all the derived contexts which can be used to terminate all the processes immediately freeing up everything. This makes context a very powerful tool in concurrent programming.
+
+This is what Context interface type looks like:
+
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+type Context interface {
+    Deadline() (deadline time.Time, ok bool)
+    Done() <-chan struct{}
+    Err() error
+    Value(key interface{}) interface{}
+}
+Deadline() returns the time when this context will be canceled, if any. Deadline returns ok==false when no deadline is set.
+Done() returns a channel that is closed when the context is canceled or times out. Done may return nil if this context can never be canceled.
+Err() returns the reason why the context was canceled, after Done() is closed. If Done is not yet closed, Err returns nil.
+Value works like a key-value and is used to share data.
+Creating context
+We can create or derive context from existing context. Root contexts are created with Background or TODO methods, while derived contexts are created using WithCancel, WithDeadline, WithTimeout, or WithValue methods. All the derived context methods return a cancel function CancelFunc as well except WithValue as it has nothing to do with the cancellation. Calling the CancelFunc cancels the child and its children, removes the parent's reference to the child, and stops any associated timers. Failing to call the CancelFunc leaks the child and its children until the parent is canceled or the timer fires.
+
+Here are ways to do those:
+
+context.Background() ctx Context
+This function returns an empty context. This should be only used usually in the main or at the top-level request handler. This can be used to derive other contexts for subsequent layers or goroutines.
+
+ctx, cancel := context.Background()
+
+context.TODO() ctx Context
+This function also creates an empty context. However, this should also be only used when you are not sure what context to use or if the function is not available to receive a context yet and will be added in the future.
+
+ctx, cancel := context.TODO()
+
+context.WithValue(parent Context, key, val interface{}) Context
+This function takes in a context and returns a derived context where value val is associated with key and flows through the context tree with the context. This means that once you get a context with value, any context that derives from this gets this value. This value is immutable and hence thread-safe.
+
+The provided key must be comparable and should not be of type string or any other built-in type to avoid collisions between packages using context. Users of WithValue should define their own types for keys. To avoid allocating when assigning to an interface{}, context keys often have concrete type struct{}. Alternatively, exported context key variables' static type should be a pointer or interface.
+
+Example: WithValue
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+package main
+
+import (
+    "context"
+    "fmt"
+)
+
+type contextKey string
+
+func main() {
+    var authToken contextKey = "auth_token"
+
+    ctx := context.WithValue(context.Background(), authToken, "XYZ_123")
+
+    fmt.Println(ctx.Value(authToken))
+}
+func WithCancel(parent Context) (ctx Context, cancel CancelFunc)
+This function takes in a parent context and returns a derived context along with a cancel function of type CancelFunc. In this derived context, a new Done channel is added which closes when the cancel function is invoked or when the parent context's Done channel is closed.
+
+One thing to keep in mind is that we should NEVER pass this cancel across different functions or layers as it can cause unexpected outcomes. Function creating derived context SHOULD only call cancel function.
+
+Below is an example demonstrating a goroutine leak using the Done channel.
+
+Example: WithCancel
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+package main
+
+import (
+    "context"
+    "fmt"
+    "math/rand"
+    "time"
+)
+
+// here we are getting data from randomCharGenerator
+// as soon as we get "o", we are breaking the loop
+// as there is nothing else to do, main function exits
+// calling cancel() function
+// as soon as cancel is called , Done channel is closed
+// exiting  goroutine in randomCharGenerator
+// this way goroutine is exited properly without leaving it unhandled
+func main() {
+    rand.Seed(time.Now().UnixNano())
+
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel() // cancel when generator is closed and program exits
+
+    for char := range randomCharGenerator(ctx) {
+        generatedChar := string(char)
+        fmt.Printf("%v\n", generatedChar)
+
+        if generatedChar == "o" {
+            break
+        }
+    }
+}
+
+// this function starts a goroutine that creates random characters
+// this is a Generator pattern
+func randomCharGenerator(ctx context.Context) <-chan int {
+    char := make(chan int)
+
+    seedChar := int('a')
+
+    go func() {
+        for {
+            select {
+            case <-ctx.Done():
+                // ** this will not print as main function will exit immedietly
+                fmt.Printf("Yay! we found: %v", seedChar)
+                return // returning not to leak the goroutine
+            case char <- seedChar:
+                seedChar = 'a' + rand.Intn(26)
+            }
+        }
+    }()
+
+    return char
+}
+func WithDeadline(parent Context, d time.Time) (Context, CancelFunc)
+This function returns a derived context from its parent that gets canceled when the deadline exceeds or cancel function is called. For example, you can create a context that will automatically get canceled at a certain time in the future and pass that around in child functions. When that context gets canceled because of the deadline running out, all the functions that got the context get notified to stop work and return. If the parent's deadline is already earlier than d, the context's Done channel is already closed.
+
+Below is the example where we are reading a large file with a deadline time of 2 milliseconds from the current time. We'll get output for 2 milliseconds and then the context will be closed and the program exits.
+
+Example: WithDeadline
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+package main
+
+import (
+    "bufio"
+    "context"
+    "fmt"
+    "log"
+    "os"
+    "time"
+)
+
+func main() {
+    // context with deadline after 2 millisecond
+    ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Millisecond))
+    defer cancel()
+
+    lineRead := make(chan string)
+
+    var fileName = "sample-file.txt"
+    file, err := os.Open(fileName)
+    if err != nil {
+        log.Fatalf("failed opening file: %s", err)
+    }
+
+    scanner := bufio.NewScanner(file)
+    scanner.Split(bufio.ScanLines)
+
+    // goroutine to read file line by line and passing to channel to print
+    go func() {
+        for scanner.Scan() {
+            lineRead <- scanner.Text()
+        }
+
+        close(lineRead)
+        file.Close()
+    }()
+
+outer:
+    for {
+        // printing file line by line until deadline is reached
+        select {
+        case <-ctx.Done():
+            fmt.Println("process stopped. reason: ", ctx.Err())
+            break outer
+        case line := <-lineRead:
+            fmt.Println(line)
+        }
+    }
+}
+func WithTimeout(parent Context, timeout time.Duration) (Context, CancelFunc)
+This function is similar to context.WithDeadline. The difference is that it takes in time duration as an input instead of the time object. This function returns a derived context that gets canceled if the cancel function is called or the timeout duration is exceeded.
+
+WithTimeout returns WithDeadline(parent, time.Now().Add(timeout)).
+
+Example: WithTimeout
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+package main
+
+import (
+    "bufio"
+    "context"
+    "fmt"
+    "log"
+    "os"
+    "time"
+)
+
+func main() {
+    // context with deadline after 2 millisecond
+    ctx, cancel := context.WithTimeout(context.Background(), 2*time.Millisecond)
+    defer cancel()
+
+    lineRead := make(chan string)
+
+    var fileName = "sample-file.txt"
+    file, err := os.Open(fileName)
+    if err != nil {
+        log.Fatalf("failed opening file: %s", err)
+    }
+
+    scanner := bufio.NewScanner(file)
+    scanner.Split(bufio.ScanLines)
+
+    // goroutine to read file line by line and passing to channel to print
+    go func() {
+        for scanner.Scan() {
+            lineRead <- scanner.Text()
+        }
+
+        close(lineRead)
+        file.Close()
+    }()
+
+outer:
+    for {
+        // printing file line by line until deadline is reached
+        select {
+        case <-ctx.Done():
+            fmt.Println("process stopped. reason: ", ctx.Err())
+            break outer
+        case line := <-lineRead:
+            fmt.Println(line)
+        }
+    }
+}
+Important Points to Keep in Mind
+Do not store Contexts inside a struct type; instead, pass a Context explicitly to each function that needs it. The Context should be the first parameter, typically named ctx.
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+func DoSomething(ctx context.Context, arg Arg) error {
+    // ... use ctx ...
+}
+Do not pass a nil Context, even if a function permits it. Pass context.TODO if you are unsure about which Context to use.
+
+Pass request-scoped data only using context. Don't pass data that should be passed using function arguments.
+
+Always look for goroutine leaks and use context effectively to avoid this.
+
+If the parent context's Done channel is closed, it will eventually close all the derived Done channels (all descendants) from it. For example,
+
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+package main
+
+import (
+    "context"
+    "fmt"
+    "time"
+)
+
+func main() {
+    c := make(chan string)
+    go func() {
+        time.Sleep(1 * time.Second)
+        c <- "one"
+    }()
+
+    ctx1 := context.Context(context.Background())
+
+    ctx2, cancel2 := context.WithTimeout(ctx1, 2*time.Second)
+    ctx3, cancel3 := context.WithTimeout(ctx2, 10*time.Second) // derives from ctx2
+    ctx4, cancel4 := context.WithTimeout(ctx2, 3*time.Second)  // derives from ctx2
+    ctx5, cancel5 := context.WithTimeout(ctx4, 5*time.Second)  // derives from ctx4
+
+    cancel2()
+    defer cancel3()
+    defer cancel4()
+    defer cancel5()
+
+    select {
+    case <-ctx3.Done():
+        fmt.Println("ctx3 closed! error: ", ctx3.Err())
+    case <-ctx4.Done():
+        fmt.Println("ctx4 closed! error: ", ctx4.Err())
+    case <-ctx5.Done():
+        fmt.Println("ctx5 closed! error: ", ctx5.Err())
+    case msg := <-c:
+        fmt.Println("received", msg)
+    }
+}
+Here, since we are closing ctx2 immediately after creating other derived contexts, all other contexts also close immediately printing ctx3, ctx4, and ctx5 closing messages randomly. ctx5 is derived from ctx4 which is getting closed due to cascading effect from ctx2 closing. Try running this multiple times, you'll see the varying results.
+
+Contexts created using Background or TODO methods have no cancellation, value, or deadlines.
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+
+COPY
+package main
+
+import (
+    "context"
+    "fmt"
+)
+
+func main() {
+    ctx := context.Background()
+
+    _, ok := ctx.Deadline()
+
+    if !ok {
+        fmt.Println("no dealine is set")
+    }
+
+    done := ctx.Done()
+
+    if done == nil {
+        fmt.Println("channel is nil")
+    }
+}
+Doc Reference: https://pkg.go.dev/context
+
+Go Language
+APIs
+
+
+
+Here's my like
+2
+
+
+Love it
+1
+
+
+MORE ARTICLES
+
+kshitij kumar's photo
+kshitij kumar
+Notes: Horizontal table partitioning using PostgreSQL
+Notes: Horizontal table partitioning using PostgreSQL
+What is partitioning? Table partitioning in SQL is the process of dividing large table data into sma…
+
+
+kshitij kumar's photo
+kshitij kumar
+Notes: Outbox Pattern using change data capture (CDC) with Dabezium
+Notes: Outbox Pattern using change data capture (CDC) with Dabezium
+Outbox pattern gives us a reliable option to work with event-driven systems asynchronously. In this …
+
+
+kshitij kumar's photo
+kshitij kumar
+Notes: LRU cache implementation in Go
+Notes: LRU cache implementation in Go
+LRU (Least Recently Used) is a common caching algorithm. This algorithm is used to keep track of rec…
+
+
+Ahmed Munna's photo
+Ahmed Munna
+
+Write
+
+Preview
+
+Guide
+
+
+
+
+
+
+
+
+
+Start typing...
+Read the code of conduct before adding a comment.
+
+Post
+IMPRESSUM
+
+No idea what this is. Let me Google!
+
+©2022 btree.dev
+
+Archive
+·
+Privacy policy
+·
+Terms
+Publish with Hashnode
+Powered by Hashnode - Home for tech writers and readers
+
