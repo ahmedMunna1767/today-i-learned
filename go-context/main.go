@@ -6,6 +6,6 @@ import (
 )
 
 func main() {
-	WithTimeout(context.Background())
+	BackgroundContext(context.Background())
 	fmt.Println("exiting")
 }
